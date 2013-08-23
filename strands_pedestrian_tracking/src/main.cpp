@@ -354,17 +354,19 @@ Camera createCamera(Vector<double>& GP,
     Matrix<double> R(motion_matrix, 0,2,0,2);
     Vector<double> t(motion_matrix(3,0), motion_matrix(3,1), motion_matrix(3,2));
     Matrix<double> K(3,3, (double*)&info->K[0]);
+    R.Show();
+    t.show();
 
     Camera camera(K, R, t, GP);
     Vector<double> GP_world = AncillaryMethods::PlaneToWorld(camera, GP);
     return Camera(K, R, t, GP_world);
 }
 
-bool createCamera(Camera *camera,
+bool createCamera(Camera &camera,
                   Vector<double>& GP,
                   const CameraInfoConstPtr &info) {
     try {
-        _listener->lookupTransform("base_footprint", "odom_combined", ros::Time(0), _current_transform);
+        _listener->lookupTransform("base_footprint", "odom", ros::Time(0), _current_transform);
     } catch (tf::TransformException ex) {
         ROS_ERROR("%s",ex.what());
         return false;
@@ -382,11 +384,11 @@ bool createCamera(Camera *camera,
     t.show();
     Matrix<double> K(3,3, (double*)&info->K[0]);
 
-    camera = new Camera(K, R, t, GP);
-    Vector<double> GP_world = AncillaryMethods::PlaneToWorld(*camera, GP);
-    camera = new Camera(K, R, t, GP_world);
+    camera = Camera(K, R, t, GP);
+    Vector<double> GP_world = AncillaryMethods::PlaneToWorld(camera, GP);
+    camera = Camera(K, R, t, GP_world);
 
-    _last_transform = _current_transform;
+//    _last_transform = _current_transform;
     return true;
 }
 
@@ -402,7 +404,7 @@ void callbackNoHOGNoVo(const ImageConstPtr &color,
     Vector<double> GP(3, (double*) &gp->n[0]);
     GP.pushBack((double) gp->d);
 
-    Camera *camera;
+    Camera camera;
     if(!createCamera(camera, GP, info))
         return;
 
@@ -426,8 +428,8 @@ void callbackNoHOGNoVo(const ImageConstPtr &color,
 
     get_image((unsigned char*)(&color->data[0]),info->width,info->height,cim);
     ///////////////////////////////////////////TRACKING///////////////////////////
-
-    tracker.process_tracking_oneFrame(HyposAll, *det_comb, cnt, detected_bounding_boxes, cim, *camera);
+    tracker.process_tracking_oneFrame(HyposAll, *det_comb, cnt, detected_bounding_boxes, cim, camera);
+    
     Vector<Hypo> hyposMDL = tracker.getHyposMDL();
 
 
@@ -445,9 +447,9 @@ void callbackNoHOGNoVo(const ImageConstPtr &color,
             oneHypoMsg.traj_x.push_back(trajPts(j)(0));
             oneHypoMsg.traj_y.push_back(trajPts(j)(1));
             oneHypoMsg.traj_z.push_back(trajPts(j)(2));
-
-            Vector<double> posInCamera = AncillaryMethods::fromWorldToCamera(trajPts(j), *camera);
-
+    
+            Vector<double> posInCamera = AncillaryMethods::fromWorldToCamera(trajPts(j), camera);
+    
             oneHypoMsg.traj_x_camera.push_back(posInCamera(0));
             oneHypoMsg.traj_y_camera.push_back(posInCamera(1));
             oneHypoMsg.traj_z_camera.push_back(posInCamera(2));

@@ -4,6 +4,7 @@
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
+#include <tf/transform_listener.h>
 
 #include <QImage>
 #include <QPainter>
@@ -48,7 +49,9 @@ ros::Publisher pub_image;
 cv::Mat img_depth_;
 cv_bridge::CvImagePtr cv_depth_ptr;	// cv_bridge for depth image
 
-//string path_config_file = "/home/mitzel/Desktop/sandbox/Demo/upper_and_cuda/bin/config_Asus.inp";
+tf::TransformListener *_listener;
+tf::StampedTransform _last_transform;
+tf::StampedTransform _current_transform;
 
 Vector< Hypo > HyposAll;
 Detections *det_comb;
@@ -357,6 +360,130 @@ Camera createCamera(Vector<double>& GP,
     return Camera(K, R, t, GP_world);
 }
 
+bool createCamera(Camera *camera,
+                  Vector<double>& GP,
+                  const CameraInfoConstPtr &info) {
+    try {
+        _listener->lookupTransform("base_footprint", "odom_combined", ros::Time(0), _current_transform);
+    } catch (tf::TransformException ex) {
+        ROS_ERROR("%s",ex.what());
+        return false;
+    }
+    Matrix<double> R(3,3);
+    Vector<double> _0(_current_transform.getBasis()[0][0], _current_transform.getBasis()[0][1], _current_transform.getBasis()[0][2]);
+    Vector<double> _1(_current_transform.getBasis()[1][0], _current_transform.getBasis()[1][1], _current_transform.getBasis()[1][2]);
+    Vector<double> _2(_current_transform.getBasis()[2][0], _current_transform.getBasis()[2][1], _current_transform.getBasis()[2][2]);
+    R.insertRow(_0, 0);
+    R.insertRow(_1, 1);
+    R.insertRow(_2, 2);
+    R.Show();
+
+    Vector<double> t(_current_transform.getOrigin()[0], _current_transform.getOrigin()[1], _current_transform.getOrigin()[2]);
+    t.show();
+    Matrix<double> K(3,3, (double*)&info->K[0]);
+
+    camera = new Camera(K, R, t, GP);
+    Vector<double> GP_world = AncillaryMethods::PlaneToWorld(*camera, GP);
+    camera = new Camera(K, R, t, GP_world);
+
+    _last_transform = _current_transform;
+    return true;
+}
+
+void callbackNoHOGNoVo(const ImageConstPtr &color,
+              const CameraInfoConstPtr &info,
+              const GroundPlane::ConstPtr &gp,
+              const UpperBodyDetector::ConstPtr &upper)
+{
+    ROS_DEBUG("Entered callback without groundHOG data using real odometry");
+    Globals::render_bbox3D = pub_image.getNumSubscribers() > 0 ? true : false;
+
+    // Get camera from VO and GP
+    Vector<double> GP(3, (double*) &gp->n[0]);
+    GP.pushBack((double) gp->d);
+
+    Camera *camera;
+    if(!createCamera(camera, GP, info))
+        return;
+
+    // Get detections from upper body
+    Vector<double> single_detection(9);
+    Vector<Vector< double > > detected_bounding_boxes;
+
+    for(int i = 0; i < upper->pos_x.size(); i++)
+    {
+        single_detection(0) = cnt;
+        single_detection(1) = i;
+        single_detection(2) = 1;
+        single_detection(3) = 1 - upper->dist[i]; // make sure that the score is always positive
+        single_detection(4) = upper->pos_x[i];
+        single_detection(5) = upper->pos_y[i];
+        single_detection(6) = upper->width[i];
+        single_detection(7) = upper->height[i] * 3;
+        single_detection(8) = upper->median_depth[i];
+        detected_bounding_boxes.pushBack(single_detection);
+    }
+
+    get_image((unsigned char*)(&color->data[0]),info->width,info->height,cim);
+    ///////////////////////////////////////////TRACKING///////////////////////////
+
+    tracker.process_tracking_oneFrame(HyposAll, *det_comb, cnt, detected_bounding_boxes, cim, *camera);
+    Vector<Hypo> hyposMDL = tracker.getHyposMDL();
+
+
+    PedestrianTrackingArray allHypoMsg;
+    allHypoMsg.header = color->header;
+    Vector<Vector<double> > trajPts;
+    Vector<double> dir;
+    for(int i = 0; i < hyposMDL.getSize(); i++)
+    {
+        PedestrianTracking oneHypoMsg;
+        oneHypoMsg.header = color->header;
+        hyposMDL(i).getTrajPts(trajPts);
+        for(int j = 0; j < trajPts.getSize(); j++)
+        {
+            oneHypoMsg.traj_x.push_back(trajPts(j)(0));
+            oneHypoMsg.traj_y.push_back(trajPts(j)(1));
+            oneHypoMsg.traj_z.push_back(trajPts(j)(2));
+
+            Vector<double> posInCamera = AncillaryMethods::fromWorldToCamera(trajPts(j), *camera);
+
+            oneHypoMsg.traj_x_camera.push_back(posInCamera(0));
+            oneHypoMsg.traj_y_camera.push_back(posInCamera(1));
+            oneHypoMsg.traj_z_camera.push_back(posInCamera(2));
+        }
+
+        oneHypoMsg.id = hyposMDL(i).getHypoID();
+        oneHypoMsg.score = hyposMDL(i).getScoreMDL();
+        oneHypoMsg.speed = hyposMDL(i).getSpeed();
+        hyposMDL(i).getDir(dir);
+
+        oneHypoMsg.dir.push_back(dir(0));
+        oneHypoMsg.dir.push_back(dir(1));
+        oneHypoMsg.dir.push_back(dir(2));
+        allHypoMsg.pedestrians.push_back(oneHypoMsg);
+    }
+
+    if(pub_image.getNumSubscribers()) {
+        ROS_DEBUG("Publishing image");
+        Image res_img;
+        res_img.header = color->header;
+        res_img.height = cim._height;
+        res_img.width = cim._width;
+        for (std::size_t i = 0; i != cim._height*cim._width; ++i) {
+            res_img.data.push_back(cim.data()[i+0*cim._height*cim._width]);
+            res_img.data.push_back(cim.data()[i+1*cim._height*cim._width]);
+            res_img.data.push_back(cim.data()[i+2*cim._height*cim._width]);
+        }
+        res_img.encoding = color->encoding;
+
+        pub_image.publish(res_img);
+    }
+
+    pub_message.publish(allHypoMsg);
+    cnt++;
+}
+
 void callbackWithoutHOG(const ImageConstPtr &color,
               const CameraInfoConstPtr &info,
               const GroundPlane::ConstPtr &gp,
@@ -571,10 +698,11 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "pedestrian_tracking");
     ros::NodeHandle n;
 
+    _listener = new tf::TransformListener();
+
     // Declare variables that can be modified by launch file or command line.
     int queue_size;
     string config_file;
-    string topic_depth_image;
     string topic_color_image;
     string topic_camera_info;
     string topic_gp;
@@ -638,6 +766,7 @@ int main(int argc, char **argv)
         syncHOG.registerCallback(boost::bind(&callbackWithHOG, _1, _2, _3, _4, _5, _6));
     ///////////////////////////////////////////////////////////////////////////////////
     // Without groundHOG
+    // With VO ////////////////////////////////////////////////////////////////////////
     sync_policies::ApproximateTime<Image, CameraInfo, GroundPlane,
             UpperBodyDetector, VisualOdometry> MySyncPolicy(queue_size); //The real queue size for synchronisation is set here.
     MySyncPolicy.setAgePenalty(1000); //set high age penalty to publish older data faster even if it might not be correctly synchronized.
@@ -651,6 +780,20 @@ int main(int argc, char **argv)
                  subscriber_upperbody, subscriber_vo);
     if(strcmp(topic_groundHOG.c_str(),"") == 0)
         sync.registerCallback(boost::bind(&callbackWithoutHOG, _1, _2, _3, _4, _5));
+    // With real odometry //////////////////////////////////////////////////////////////
+    sync_policies::ApproximateTime<Image, CameraInfo, GroundPlane,
+            UpperBodyDetector> MySyncPolicyOdom(queue_size); //The real queue size for synchronisation is set here.
+    MySyncPolicyOdom.setAgePenalty(1000); //set high age penalty to publish older data faster even if it might not be correctly synchronized.
+
+    const sync_policies::ApproximateTime<Image, CameraInfo, GroundPlane,
+            UpperBodyDetector> MyConstSyncPolicyOdom = MySyncPolicyOdom;
+
+    Synchronizer< sync_policies::ApproximateTime<Image, CameraInfo, GroundPlane,
+            UpperBodyDetector> >
+            syncOdom(MyConstSyncPolicyOdom, subscriber_color, subscriber_camera_info, subscriber_gp,
+                 subscriber_upperbody);
+    if(strcmp(topic_vo.c_str(),"") == 0)
+        syncOdom.registerCallback(boost::bind(&callbackNoHOGNoVo, _1, _2, _3, _4));
     ///////////////////////////////////////////////////////////////////////////////////
 
     // Create a topic publisher
@@ -659,6 +802,9 @@ int main(int argc, char **argv)
 
     private_node_handle_.param("pedestrian_image", pub_image_topic, string("/pedestrian_tracking/image"));
     pub_image = n.advertise<Image>(pub_image_topic.c_str(), 10);
+
+    _listener->waitForTransform("base_footprint", "odom", ros::Time(0), ros::Duration(5.0));
+    _listener->lookupTransform("base_footprint", "odom", ros::Time(0), _last_transform);
 
     ros::spin();
     return 0;

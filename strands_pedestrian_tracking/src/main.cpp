@@ -9,6 +9,8 @@
 #include <QImage>
 #include <QPainter>
 
+#include <Eigen/Eigen>
+
 #include "sensor_msgs/Image.h"
 #include "sensor_msgs/CameraInfo.h"
 
@@ -50,7 +52,6 @@ cv::Mat img_depth_;
 cv_bridge::CvImagePtr cv_depth_ptr;	// cv_bridge for depth image
 
 tf::TransformListener *_listener;
-tf::StampedTransform _last_transform;
 tf::StampedTransform _current_transform;
 
 Vector< Hypo > HyposAll;
@@ -371,16 +372,32 @@ bool createCamera(Camera &camera,
         ROS_ERROR("%s",ex.what());
         return false;
     }
+
+    // Transform tf into eigen isometry3d
+    Eigen::Isometry3d pose;
+    pose.translation().x() = _current_transform.getOrigin()[0];
+    pose.translation().y() = _current_transform.getOrigin()[1];
+    pose.translation().z() = _current_transform.getOrigin()[2];
+    Eigen::Quaterniond rotation;
+    rotation.x() = _current_transform.getRotation().getX();
+    rotation.y() = _current_transform.getRotation().getY();
+    rotation.z() = _current_transform.getRotation().getZ();
+    rotation.w() = _current_transform.getRotation().getW();
+    pose.rotate(rotation);
+    Eigen::Matrix4d motion_matrix = pose.matrix().inverse();
+
+    // Creating [R]otation matrix using motion_matrix(0:2,0:2)
     Matrix<double> R(3,3);
-    Vector<double> _0(_current_transform.getBasis()[0][0], _current_transform.getBasis()[0][1], _current_transform.getBasis()[0][2]);
-    Vector<double> _1(_current_transform.getBasis()[1][0], _current_transform.getBasis()[1][1], _current_transform.getBasis()[1][2]);
-    Vector<double> _2(_current_transform.getBasis()[2][0], _current_transform.getBasis()[2][1], _current_transform.getBasis()[2][2]);
+    Vector<double> _0(motion_matrix.data()[0], motion_matrix.data()[1], motion_matrix.data()[2]);
+    Vector<double> _1(motion_matrix.data()[4], motion_matrix.data()[5], motion_matrix.data()[6]);
+    Vector<double> _2(motion_matrix.data()[8], motion_matrix.data()[9], motion_matrix.data()[10]);
     R.insertRow(_0, 0);
     R.insertRow(_1, 1);
     R.insertRow(_2, 2);
     R.Show();
 
-    Vector<double> t(_current_transform.getOrigin()[0], _current_transform.getOrigin()[1], _current_transform.getOrigin()[2]);
+    // Creating [t]ranslation vector using motion_matrix(3,0:3)
+    Vector<double> t(motion_matrix.data()[3], motion_matrix.data()[7], motion_matrix.data()[11]);
     t.show();
     Matrix<double> K(3,3, (double*)&info->K[0]);
 
@@ -388,7 +405,6 @@ bool createCamera(Camera &camera,
     Vector<double> GP_world = AncillaryMethods::PlaneToWorld(camera, GP);
     camera = Camera(K, R, t, GP_world);
 
-//    _last_transform = _current_transform;
     return true;
 }
 
@@ -753,6 +769,7 @@ int main(int argc, char **argv)
     //Registering callback
     ///////////////////////////////////////////////////////////////////////////////////
     // With groundHOG
+    // With VO ////////////////////////////////////////////////////////////////////////
     sync_policies::ApproximateTime<Image, CameraInfo, GroundPlane,
             GroundHOGDetections, UpperBodyDetector, VisualOdometry> MySyncPolicyHOG(queue_size); //The real queue size for synchronisation is set here.
     MySyncPolicyHOG.setAgePenalty(1000); //set high age penalty to publish older data faster even if it might not be correctly synchronized.
@@ -805,8 +822,9 @@ int main(int argc, char **argv)
     private_node_handle_.param("pedestrian_image", pub_image_topic, string("/pedestrian_tracking/image"));
     pub_image = n.advertise<Image>(pub_image_topic.c_str(), 10);
 
+    // Initial wait for transform
     _listener->waitForTransform("base_footprint", "odom", ros::Time(0), ros::Duration(5.0));
-    _listener->lookupTransform("base_footprint", "odom", ros::Time(0), _last_transform);
+    _listener->lookupTransform("base_footprint", "odom", ros::Time(0), _current_transform);
 
     ros::spin();
     return 0;

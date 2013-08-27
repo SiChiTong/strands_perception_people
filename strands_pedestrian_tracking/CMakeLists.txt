@@ -4,7 +4,9 @@ project(strands_pedestrian_tracking)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
+find_package(PkgConfig REQUIRED)
 find_package(catkin REQUIRED COMPONENTS cv_bridge message_filters roscpp sensor_msgs std_msgs strands_perception_people_msgs tf)
+pkg_check_modules(EIGEN REQUIRED eigen3)
 
 find_package(Qt4 REQUIRED COMPONENTS QtCore QtGui)
 include(${QT_USE_FILE})
@@ -73,6 +75,7 @@ catkin_package(
 # include_directories(include)
 include_directories(include
   ${catkin_INCLUDE_DIRS}
+  ${EIGEN_INCLUDE_DIRS}
 )
 
 ## Declare a cpp library

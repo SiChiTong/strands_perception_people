@@ -378,19 +378,27 @@ bool createCamera(Camera &camera,
     pose.translation().x() = _current_transform.getOrigin()[0];
     pose.translation().y() = _current_transform.getOrigin()[1];
     pose.translation().z() = _current_transform.getOrigin()[2];
+    ROS_INFO_STREAM("Translation: " << _current_transform.getOrigin()[0] << ", " << _current_transform.getOrigin()[1] << ", " << _current_transform.getOrigin()[2] << " <-> " << pose.translation().x() << ", " << pose.translation().y() << ", " << pose.translation().z());
+
     Eigen::Quaterniond rotation;
     rotation.x() = _current_transform.getRotation().getX();
     rotation.y() = _current_transform.getRotation().getY();
     rotation.z() = _current_transform.getRotation().getZ();
     rotation.w() = _current_transform.getRotation().getW();
-    pose.rotate(rotation);
-    Eigen::Matrix4d motion_matrix = pose.matrix().inverse();
+    ROS_INFO_STREAM("Rotation: " << _current_transform.getRotation().getX() << ", " << _current_transform.getRotation().getY() << ", " << _current_transform.getRotation().getZ() << ", " << _current_transform.getRotation().getW()  << " <-> " << rotation.x() << ", " << rotation.y() << ", " << rotation.z() << ", " << rotation.w());
+    pose.linear() = rotation.toRotationMatrix();
+    Eigen::Quaterniond rot1(pose.rotation());
+    ROS_INFO_STREAM("Pose rotated: trans: "<< pose.translation().x() << ", " << pose.translation().y() << ", " << pose.translation().z() << " rot: " << rot1.x() << ", " << rot1.y() << ", " << rot1.z() << ", " << rot1.w());
+    Eigen::Matrix4d motion_matrix = pose.matrix();
+
+    for(int i = 0; i < 4*4; i++)
+        ROS_INFO_STREAM(" " << motion_matrix.data()[i]);
 
     // Creating [R]otation matrix using motion_matrix(0:2,0:2)
     Matrix<double> R(3,3);
-    Vector<double> _0(motion_matrix.data()[0], motion_matrix.data()[1], motion_matrix.data()[2]);
-    Vector<double> _1(motion_matrix.data()[4], motion_matrix.data()[5], motion_matrix.data()[6]);
-    Vector<double> _2(motion_matrix.data()[8], motion_matrix.data()[9], motion_matrix.data()[10]);
+    Vector<double> _0((double)motion_matrix.data()[0], (double)motion_matrix.data()[1], (double)motion_matrix.data()[2]);
+    Vector<double> _1((double)motion_matrix.data()[4], (double)motion_matrix.data()[5], (double)motion_matrix.data()[6]);
+    Vector<double> _2((double)motion_matrix.data()[8], (double)motion_matrix.data()[9], (double)motion_matrix.data()[10]);
     R.insertRow(_0, 0);
     R.insertRow(_1, 1);
     R.insertRow(_2, 2);

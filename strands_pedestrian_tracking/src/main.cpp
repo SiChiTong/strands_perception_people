@@ -397,7 +397,7 @@ void callbackNoHOGNoVo(const ImageConstPtr &color,
               const GroundPlane::ConstPtr &gp,
               const UpperBodyDetector::ConstPtr &upper)
 {
-    ROS_DEBUG("Entered callback without groundHOG data using real odometry");
+    ROS_DEBUG("Entered callback without groundHOG data, using real odometry");
     Globals::render_bbox3D = pub_image.getNumSubscribers() > 0 ? true : false;
 
     // Get camera from VO and GP

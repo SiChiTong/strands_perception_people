@@ -111,6 +111,7 @@ void trackingCallback(const PedestrianTrackingArray::ConstPtr &pta)
         result.header.frame_id = target_frame;
         result.header.seq = ++detect_seq;
         pub_detect.publish(result);
+	return;
     }
 
     geometry_msgs::PoseStamped closest_person;

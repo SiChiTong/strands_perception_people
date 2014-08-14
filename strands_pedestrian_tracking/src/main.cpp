@@ -13,7 +13,11 @@
 #include <sensor_msgs/CameraInfo.h>
 
 #include <string.h>
+#include <sstream>
 #include <boost/thread.hpp>
+#include <boost/uuid/uuid.hpp>
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 
 #include <iostream>
 #include <fstream>
@@ -55,9 +59,18 @@ Vector< Hypo > HyposAll;
 Detections *det_comb;
 Tracker tracker;
 int cnt = 0;
+double startup_time = 0.0;
+std::string startup_time_str = "";
 
 //CImgDisplay* main_disp;
 CImg<unsigned char> cim(640,480,1,3);
+
+template<typename T>
+std::string num_to_str(T num) {
+    std::stringstream ss;
+    ss << num;
+    return ss.str();
+}
 
 Vector<double> fromCam2World(Vector<double> posInCamera, Camera cam)
 {
@@ -358,6 +371,14 @@ Camera createCamera(Vector<double>& GP,
     return Camera(K, R, t, GP_world);
 }
 
+std::string generateUUID(std::string time, int id) {
+    boost::uuids::uuid dns_namespace_uuid;
+    boost::uuids::name_generator gen(dns_namespace_uuid);
+    time += num_to_str<int>(id);
+
+    return num_to_str<boost::uuids::uuid>(gen(time.c_str()));
+}
+
 void callbackWithoutHOG(const ImageConstPtr &color,
               const CameraInfoConstPtr &info,
               const GroundPlane::ConstPtr &gp,
@@ -399,13 +420,13 @@ void callbackWithoutHOG(const ImageConstPtr &color,
 
 
     PedestrianTrackingArray allHypoMsg;
-    allHypoMsg.header = color->header;
+    allHypoMsg.header = upper->header;
     Vector<Vector<double> > trajPts;
     Vector<double> dir;
     for(int i = 0; i < hyposMDL.getSize(); i++)
     {
         PedestrianTracking oneHypoMsg;
-        oneHypoMsg.header = color->header;
+        oneHypoMsg.header = upper->header;
         hyposMDL(i).getTrajPts(trajPts);
         for(int j = 0; j < trajPts.getSize(); j++)
         {
@@ -421,6 +442,7 @@ void callbackWithoutHOG(const ImageConstPtr &color,
         }
 
         oneHypoMsg.id = hyposMDL(i).getHypoID();
+        oneHypoMsg.uuid = generateUUID(startup_time_str, oneHypoMsg.id);
         oneHypoMsg.score = hyposMDL(i).getScoreMDL();
         oneHypoMsg.speed = hyposMDL(i).getSpeed();
         hyposMDL(i).getDir(dir);
@@ -461,7 +483,6 @@ void callbackWithHOG(const ImageConstPtr &color,
 {
     ROS_DEBUG("Entered callback with groundHOG data");
     Globals::render_bbox3D = pub_image.getNumSubscribers() > 0 ? true : false;
-
 
     // Get camera from VO and GP
     Vector<double> GP(3, (double*) &gp->n[0]);
@@ -511,13 +532,13 @@ void callbackWithHOG(const ImageConstPtr &color,
 
 
     PedestrianTrackingArray allHypoMsg;
-    allHypoMsg.header = color->header;
+    allHypoMsg.header = upper->header;
     Vector<Vector<double> > trajPts;
     Vector<double> dir;
     for(int i = 0; i < hyposMDL.getSize(); i++)
     {
         PedestrianTracking oneHypoMsg;
-        oneHypoMsg.header = color->header;
+        oneHypoMsg.header = upper->header;
         hyposMDL(i).getTrajPts(trajPts);
         for(int j = 0; j < trajPts.getSize(); j++)
         {
@@ -534,6 +555,7 @@ void callbackWithHOG(const ImageConstPtr &color,
         }
 
         oneHypoMsg.id = hyposMDL(i).getHypoID();
+        oneHypoMsg.uuid = generateUUID(startup_time_str, oneHypoMsg.id);
         oneHypoMsg.score = hyposMDL(i).getScoreMDL();
         oneHypoMsg.speed = hyposMDL(i).getSpeed();
         hyposMDL(i).getDir(dir);
@@ -565,6 +587,33 @@ void callbackWithHOG(const ImageConstPtr &color,
     cnt++;
 }
 
+// Connection callback that unsubscribes from the tracker if no one is subscribed.
+void connectCallback(message_filters::Subscriber<CameraInfo> &sub_cam,
+                     message_filters::Subscriber<GroundPlane> &sub_gp,
+                     message_filters::Subscriber<GroundHOGDetections> &sub_hog,
+                     message_filters::Subscriber<UpperBodyDetector> &sub_ubd,
+                     message_filters::Subscriber<VisualOdometry> &sub_vo,
+                     image_transport::SubscriberFilter &sub_col,
+                     image_transport::ImageTransport &it){
+    if(!pub_message.getNumSubscribers() && !pub_image.getNumSubscribers()) {
+        ROS_DEBUG("Tracker: No subscribers. Unsubscribing.");
+        sub_cam.unsubscribe();
+        sub_gp.unsubscribe();
+        sub_hog.unsubscribe();
+        sub_ubd.unsubscribe();
+        sub_vo.unsubscribe();
+        sub_col.unsubscribe();
+    } else {
+        ROS_DEBUG("Tracker: New subscribers. Subscribing.");
+        sub_cam.subscribe();
+        sub_gp.subscribe();
+        sub_hog.subscribe();
+        sub_ubd.subscribe();
+        sub_vo.subscribe();
+        sub_col.subscribe(it,sub_col.getTopic().c_str(),1);
+    }
+}
+
 int main(int argc, char **argv)
 {
     Globals::render_bbox2D = false;
@@ -573,6 +622,9 @@ int main(int argc, char **argv)
     // Set up ROS.
     ros::init(argc, argv, "pedestrian_tracking");
     ros::NodeHandle n;
+
+    startup_time = ros::Time::now().toSec();
+    startup_time_str = num_to_str<double>(startup_time);
 
     // Declare variables that can be modified by launch file or command line.
     int queue_size;
@@ -599,7 +651,7 @@ int main(int argc, char **argv)
     private_node_handle_.param("upper_body_detections", topic_upperbody, string("/upper_body_detector/detections"));
     private_node_handle_.param("visual_odometry", topic_vo, string("/visual_odometry/motion_matrix"));
 
-    string topic_color_image = cam_ns + "/rgb/image_color";
+    string topic_color_image = cam_ns + "/rgb/image_rect_color";
     string topic_camera_info = cam_ns + "/rgb/camera_info";
 
     if(strcmp(config_file.c_str(),"") == 0) {
@@ -618,13 +670,31 @@ int main(int argc, char **argv)
 
     // Create a subscriber.
     // Set queue size to 1 because generating a queue here will only pile up images and delay the output by the amount of queued images
-    message_filters::Subscriber<CameraInfo> subscriber_camera_info(n, topic_camera_info.c_str(), 1);
+    // The immediate unsubscribe is necessary to start without subscribing to any topic because message_filters does nor allow to do it another way.
     image_transport::SubscriberFilter subscriber_color;
-    subscriber_color.subscribe(it, topic_color_image.c_str(), 1);
-    message_filters::Subscriber<GroundPlane> subscriber_gp(n, topic_gp.c_str(), 1);
-    message_filters::Subscriber<GroundHOGDetections> subscriber_groundHOG(n, topic_groundHOG.c_str(), 1);
-    message_filters::Subscriber<UpperBodyDetector> subscriber_upperbody(n, topic_upperbody.c_str(), 1);
-    message_filters::Subscriber<VisualOdometry> subscriber_vo(n, topic_vo.c_str(), 1);
+    subscriber_color.subscribe(it, topic_color_image.c_str(), 1); subscriber_color.unsubscribe(); //This subscribe and unsubscribe is just to set the topic name.
+    message_filters::Subscriber<CameraInfo> subscriber_camera_info(n, topic_camera_info.c_str(), 1); subscriber_camera_info.unsubscribe();
+    message_filters::Subscriber<GroundPlane> subscriber_gp(n, topic_gp.c_str(), 1); subscriber_gp.unsubscribe();
+    message_filters::Subscriber<GroundHOGDetections> subscriber_groundHOG(n, topic_groundHOG.c_str(), 1); subscriber_groundHOG.unsubscribe();
+    message_filters::Subscriber<UpperBodyDetector> subscriber_upperbody(n, topic_upperbody.c_str(), 1); subscriber_upperbody.unsubscribe();
+    message_filters::Subscriber<VisualOdometry> subscriber_vo(n, topic_vo.c_str(), 1); subscriber_vo.unsubscribe();
+
+    ros::SubscriberStatusCallback con_cb = boost::bind(&connectCallback,
+                                                       boost::ref(subscriber_camera_info),
+                                                       boost::ref(subscriber_gp),
+                                                       boost::ref(subscriber_groundHOG),
+                                                       boost::ref(subscriber_upperbody),
+                                                       boost::ref(subscriber_vo),
+                                                       boost::ref(subscriber_color),
+                                                       boost::ref(it));
+    image_transport::SubscriberStatusCallback image_cb = boost::bind(&connectCallback,
+                                                                     boost::ref(subscriber_camera_info),
+                                                                     boost::ref(subscriber_gp),
+                                                                     boost::ref(subscriber_groundHOG),
+                                                                     boost::ref(subscriber_upperbody),
+                                                                     boost::ref(subscriber_vo),
+                                                                     boost::ref(subscriber_color),
+                                                                     boost::ref(it));
 
     ///////////////////////////////////////////////////////////////////////////////////
     //Registering callback
@@ -662,10 +732,10 @@ int main(int argc, char **argv)
 
     // Create a topic publisher
     private_node_handle_.param("pedestrian_array", pub_topic, string("/pedestrian_tracking/pedestrian_array"));
-    pub_message = n.advertise<PedestrianTrackingArray>(pub_topic.c_str(), 10);
+    pub_message = n.advertise<PedestrianTrackingArray>(pub_topic.c_str(), 10, con_cb, con_cb);
 
     private_node_handle_.param("pedestrian_image", pub_image_topic, string("/pedestrian_tracking/image"));
-    pub_image = it.advertise(pub_image_topic.c_str(), 1);
+    pub_image = it.advertise(pub_image_topic.c_str(), 1, image_cb, image_cb);
 
     ros::spin();
     return 0;

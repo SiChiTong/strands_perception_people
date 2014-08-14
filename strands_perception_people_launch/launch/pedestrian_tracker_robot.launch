@@ -1,7 +1,7 @@
 <launch>
     <!-- Global paramters -->
     <arg name="gp_queue_size" default="5" />
-    <arg name="vo_queue_size" default="5" />
+    <!-- <arg name="vo_queue_size" default="5" /> -->
     <arg name="ubd_queue_size" default="5" />
     <arg name="pt_queue_size" default="10" />
     <arg name="model" default="$(find strands_ground_hog)/model/config" />
@@ -11,6 +11,7 @@
     <arg name="ptu_state" default="/ptu/state" />
     <arg name="template_file" default="$(find strands_upper_body_detector)/config/upper_temp_n.txt" />
     <arg name="camera_namespace" default="/head_xtion" />
+    <arg name="odom" default="/odom" />
     <arg name="ground_plane" default="/ground_plane" />
     <arg name="upper_body_detections" default="/upper_body_detector/detections" />
     <arg name="upper_body_bb_centres" default="/upper_body_detector/bounding_box_centres" />
@@ -18,19 +19,37 @@
     <arg name="visual_odometry" default="/visual_odometry/motion_matrix" />
     <arg name="pedestrian_array" default="/pedestrian_tracking/pedestrian_array" />
     <arg name="pedestrian_image" default="/pedestrian_tracking/image" />
-    <arg name="tf_target_frame" default="/base_link" />
+    <arg name="tf_target_frame" default="/map" />
     <arg name="pd_localisations" default="/pedestrian_localisation/localisations" />
     <arg name="pd_marker" default="/pedestrian_localisation/marker_array" />
+    <arg name="log" default="false" />
 
-    <!-- Visual Odometry -->
+    <arg name="machine" default="localhost" />
+    <arg name="user" default="" />
+
+    <machine name="$(arg machine)" address="$(arg machine)" env-loader="/opt/strands/strands_catkin_ws/devel/env.sh" user="$(arg user)" default="true"/>
+    
+    <!-- Visual Odometry 
     <include file="$(find strands_visual_odometry)/launch/visual_odometry.launch">
+        <arg name="machine" value="$(arg machine)"/>
+        <arg name="user" value="$(arg user)"/>
         <arg name="queue_size" value="$(arg vo_queue_size)"/>
         <arg name="camera_namespace" value="$(arg camera_namespace)"/>
+        <arg name="motion_parameters" value="$(arg visual_odometry)"/>
+    </include> -->
+
+    <!-- Odometry -->
+    <include file="$(find strands_perception_people_utils)/launch/odom2visual.launch">
+        <arg name="machine" value="$(arg machine)"/>
+        <arg name="user" value="$(arg user)"/>
+        <arg name="odom" value="$(arg odom)"/>
         <arg name="motion_parameters" value="$(arg visual_odometry)"/>
     </include>
 
     <!-- Ground Plane - fixed -->
     <include file="$(find strands_ground_plane)/launch/ground_plane_fixed.launch">
+        <arg name="machine" value="$(arg machine)"/>
+        <arg name="user" value="$(arg user)"/>
         <arg name="param_file" value="$(arg gp_param_file)"/>
         <arg name="ptu_state" value="$(arg ptu_state)"/>
         <arg name="ground_plane" value="$(arg ground_plane)"/>
@@ -38,6 +57,8 @@
 
     <!-- Upper Body Detector -->
     <include file="$(find strands_upper_body_detector)/launch/upper_body_detector.launch">
+        <arg name="machine" value="$(arg machine)"/>
+        <arg name="user" value="$(arg user)"/>
         <arg name="queue_size" value="$(arg ubd_queue_size)"/>
         <arg name="config_file" value="$(arg ubd_config_file)"/>
         <arg name="template_file" value="$(arg template_file)"/>
@@ -50,6 +71,8 @@
 
     <!-- Pedestrian Tracking -->
     <include file="$(find strands_pedestrian_tracking)/launch/pedestrian_tracking_no_HOG.launch">
+        <arg name="machine" value="$(arg machine)"/>
+        <arg name="user" value="$(arg user)"/>
         <arg name="queue_size" value="$(arg pt_queue_size)"/>
         <arg name="config_file" value="$(arg pt_config_file)"/>
         <arg name="camera_namespace" value="$(arg camera_namespace)"/>
@@ -62,11 +85,19 @@
 
     <!-- Pedestrian Localisation -->
     <include file="$(find strands_pedestrian_localisation)/launch/pedestrian_localisation.launch">
+        <arg name="machine" value="$(arg machine)"/>
+        <arg name="user" value="$(arg user)"/>
         <arg name="target_frame" value="$(arg tf_target_frame)"/>
         <arg name="pedestrian_array" value="$(arg pedestrian_array)"/>
         <arg name="localisations" value="$(arg pd_localisations)"/>
         <arg name="marker" value="$(arg pd_marker)"/>
     </include>
 
+    <!-- Logging -->
+    <include file="$(find strands_perception_people_utils)/launch/logging.launch">
+        <arg name="machine" value="$(arg machine)"/>
+        <arg name="user" value="$(arg user)"/>
+        <arg name="log" value="$(arg log)"/>
+    </include>
 
 </launch> 

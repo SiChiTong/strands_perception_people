@@ -9,6 +9,7 @@
 #include <image_transport/subscriber_filter.h>
 #include <sensor_msgs/CameraInfo.h>
 #include <geometry_msgs/Pose.h>
+#include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PoseArray.h>
 
 #include <string.h>
@@ -38,9 +39,8 @@ using namespace sensor_msgs;
 using namespace message_filters;
 using namespace strands_perception_people_msgs;
 
-ros::Publisher pub_message;
+ros::Publisher pub_message, pub_centres, pub_closest;
 image_transport::Publisher pub_result_image;
-ros::Publisher pub_centres;
 
 cv::Mat img_depth_;
 cv_bridge::CvImagePtr cv_depth_ptr;	// cv_bridge for depth image
@@ -165,7 +165,7 @@ void ReadUpperBodyTemplate(string template_path)
 void callback(const ImageConstPtr &depth,  const ImageConstPtr &color,const GroundPlane::ConstPtr &gp, const CameraInfoConstPtr &info)
 {
     // Check if calculation is necessary
-    bool detect = pub_message.getNumSubscribers() > 0 || pub_centres.getNumSubscribers() > 0;
+    bool detect = pub_message.getNumSubscribers() > 0 || pub_centres.getNumSubscribers() > 0 || pub_closest.getNumSubscribers() > 0;
     bool vis = pub_result_image.getNumSubscribers() > 0;
 
     if(!detect && !vis)
@@ -198,9 +198,15 @@ void callback(const ImageConstPtr &depth,  const ImageConstPtr &color,const Grou
 
     // Generate messages
     UpperBodyDetector detection_msg;
-    geometry_msgs::PoseArray bb_centres;
     detection_msg.header = depth->header;
-    bb_centres.header    = depth->header;
+    geometry_msgs::PoseArray bb_centres;
+    bb_centres.header = depth->header;
+    geometry_msgs::PoseStamped closest;
+    closest.header = depth->header;
+    closest.pose.position.z = 10000;
+    closest.pose.orientation.w = 1;
+    bool found = false;
+
     for(int i = 0; i < detected_bounding_boxes.getSize(); i++)
     {
         // Custom detections message
@@ -222,6 +228,10 @@ void callback(const ImageConstPtr &depth,  const ImageConstPtr &color,const Grou
         pose.position.z = detected_bounding_boxes(i)(5);
         pose.orientation.w = 1.0; //No rotation atm.
         bb_centres.poses.push_back(pose);
+        if(closest.pose.position.z > pose.position.z) {
+            closest.pose.position = pose.position;
+            found = true;
+        }
     }
 
     // Creating a ros image with the detection results an publishing it
@@ -245,6 +255,28 @@ void callback(const ImageConstPtr &depth,  const ImageConstPtr &color,const Grou
     // Publishing detections
     pub_message.publish(detection_msg);
     pub_centres.publish(bb_centres);
+    if(found) pub_closest.publish(closest);
+}
+
+// Connection callback that unsubscribes from the tracker if no one is subscribed.
+void connectCallback(message_filters::Subscriber<CameraInfo> &sub_cam,
+                     message_filters::Subscriber<GroundPlane> &sub_gp,
+                     image_transport::SubscriberFilter &sub_col,
+                     image_transport::SubscriberFilter &sub_dep,
+                     image_transport::ImageTransport &it){
+    if(!pub_message.getNumSubscribers() && !pub_result_image.getNumSubscribers() && !pub_centres.getNumSubscribers()) {
+        ROS_DEBUG("Upper Body Detector: No subscribers. Unsubscribing.");
+        sub_cam.unsubscribe();
+        sub_gp.unsubscribe();
+        sub_col.unsubscribe();
+        sub_dep.unsubscribe();
+    } else {
+        ROS_DEBUG("Upper Body Detector: New subscribers. Subscribing.");
+        sub_cam.subscribe();
+        sub_gp.subscribe();
+        sub_col.subscribe(it,sub_col.getTopic().c_str(),1);
+        sub_dep.subscribe(it,sub_dep.getTopic().c_str(),1);
+    }
 }
 
 int main(int argc, char **argv)
@@ -262,6 +294,7 @@ int main(int argc, char **argv)
     string topic_gp;
 
     string pub_topic_centres;
+    string pub_topic_closest;
     string pub_topic_ubd;
     string pub_topic_result_image;
 
@@ -276,9 +309,9 @@ int main(int argc, char **argv)
     private_node_handle_.param("camera_namespace", cam_ns, string("/camera"));
     private_node_handle_.param("ground_plane", topic_gp, string("/ground_plane"));
 
-    string topic_depth_image = cam_ns + "/depth/image";
-    string topic_color_image = cam_ns + "/rgb/image_color";
-    string topic_camera_info = cam_ns + "/rgb/camera_info";
+    string topic_depth_image = cam_ns + "/depth/image_rect_meters";
+    string topic_color_image = cam_ns + "/rgb/image_rect_color";
+    string topic_camera_info = cam_ns + "/depth/camera_info";
    
     // Checking if all config files could be loaded
     if(strcmp(config_file.c_str(),"") == 0) {
@@ -302,11 +335,24 @@ int main(int argc, char **argv)
     // Create a subscriber.
     // Set queue size to 1 because generating a queue here will only pile up images and delay the output by the amount of queued images
     image_transport::SubscriberFilter subscriber_depth;
-    subscriber_depth.subscribe(it, topic_depth_image.c_str(),1);
-    message_filters::Subscriber<CameraInfo> subscriber_camera_info(n, topic_camera_info.c_str(), 1);
+    subscriber_depth.subscribe(it, topic_depth_image.c_str(),1); subscriber_depth.unsubscribe();
+    message_filters::Subscriber<CameraInfo> subscriber_camera_info(n, topic_camera_info.c_str(), 1); subscriber_camera_info.unsubscribe();
     image_transport::SubscriberFilter subscriber_color;
-    subscriber_color.subscribe(it, topic_color_image.c_str(), 1);
-    message_filters::Subscriber<GroundPlane> subscriber_gp(n, topic_gp.c_str(), 1);
+    subscriber_color.subscribe(it, topic_color_image.c_str(), 1); subscriber_color.unsubscribe();
+    message_filters::Subscriber<GroundPlane> subscriber_gp(n, topic_gp.c_str(), 1); subscriber_gp.unsubscribe();
+
+    ros::SubscriberStatusCallback con_cb = boost::bind(&connectCallback,
+                                                       boost::ref(subscriber_camera_info),
+                                                       boost::ref(subscriber_gp),
+                                                       boost::ref(subscriber_color),
+                                                       boost::ref(subscriber_depth),
+                                                       boost::ref(it));
+    image_transport::SubscriberStatusCallback image_cb = boost::bind(&connectCallback,
+                                                                     boost::ref(subscriber_camera_info),
+                                                                     boost::ref(subscriber_gp),
+                                                                     boost::ref(subscriber_color),
+                                                                     boost::ref(subscriber_depth),
+                                                                     boost::ref(it));
 
     //The real queue size for synchronisation is set here.
     sync_policies::ApproximateTime<Image, Image, GroundPlane, CameraInfo> MySyncPolicy(queue_size);
@@ -330,13 +376,16 @@ int main(int argc, char **argv)
 
     // Create publisher
     private_node_handle_.param("upper_body_detections", pub_topic_ubd, string("/upper_body_detector/detections"));
-    pub_message = n.advertise<UpperBodyDetector>(pub_topic_ubd.c_str(), 10);
+    pub_message = n.advertise<UpperBodyDetector>(pub_topic_ubd.c_str(), 10, con_cb, con_cb);
 
     private_node_handle_.param("upper_body_bb_centres", pub_topic_centres, string("/upper_body_detector/bounding_box_centres"));
-    pub_centres = n.advertise<geometry_msgs::PoseArray>(pub_topic_centres.c_str(), 10);
+    pub_centres = n.advertise<geometry_msgs::PoseArray>(pub_topic_centres.c_str(), 10, con_cb, con_cb);
+
+    private_node_handle_.param("upper_body_closest_bb_centres", pub_topic_closest, string("/upper_body_detector/closest_bounding_box_centre"));
+    pub_closest = n.advertise<geometry_msgs::PoseStamped>(pub_topic_closest.c_str(), 10, con_cb, con_cb);
 
     private_node_handle_.param("upper_body_image", pub_topic_result_image, string("/upper_body_detector/image"));
-    pub_result_image = it.advertise(pub_topic_result_image.c_str(), 1);
+    pub_result_image = it.advertise(pub_topic_result_image.c_str(), 1, image_cb, image_cb);
 
     // Start ros thread managment
     ros::spin();

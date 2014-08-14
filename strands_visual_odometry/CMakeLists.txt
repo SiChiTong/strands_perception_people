@@ -5,7 +5,7 @@ project(strands_visual_odometry)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(PkgConfig REQUIRED)
-find_package(catkin REQUIRED COMPONENTS message_generation roscpp sensor_msgs std_msgs message_filters strands_perception_people_msgs cv_bridge image_transport)
+find_package(catkin REQUIRED COMPONENTS roscpp sensor_msgs std_msgs message_filters strands_perception_people_msgs cv_bridge image_transport)
 pkg_check_modules(EIGEN REQUIRED eigen3)
 
 set(CMAKE_BUILD_TYPE Release)
@@ -88,7 +88,7 @@ add_executable(visual_odometry src/main.cpp ${FOVIS_CPP} ${FOVIS_C})
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes
-add_dependencies(visual_odometry strands_perception_people_msgs_generate_messages_cpp strands_perception_people_msgs_gencpp)
+add_dependencies(visual_odometry ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
  target_link_libraries(visual_odometry

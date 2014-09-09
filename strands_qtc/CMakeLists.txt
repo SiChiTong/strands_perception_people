@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(strands_qtc_tamer)
+project(strands_qtc)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)

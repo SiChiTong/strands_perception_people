@@ -27,6 +27,6 @@ strands_people_tracker:
                     x: 1.4
                     y: 1.4
                 position:                                      # The std deviation for the cartesian model
-                    x: 0.1
-                    y: 0.1
-            matching_algorithm: "JPDA"                       # The algorthim to match different detections. NN = Nearest Neighbour, JPDA = Joint Probability Data Association, NNJPDA = NN + JPDA
+                    x: 0.3
+                    y: 0.3
+            matching_algorithm: "NNJPDA"                       # The algorthim to match different detections. NN = Nearest Neighbour, JPDA = Joint Probability Data Association, NNJPDA = NN + JPDA

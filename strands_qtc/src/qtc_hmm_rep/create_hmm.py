@@ -65,26 +65,28 @@ def createCNDTransEmiProb(qtc_type='qtcc'):
         raise(QtcException("Unknow qtc type: {!r}".format(qtc_type)))
 
     qtc = np.array(qtc)
+    #np.savetxt('/home/cdondrup/qtc.csv', qtc, delimiter=',', fmt='%1f')
 
     trans = np.zeros((state_num, state_num))
     for i1 in xrange(qtc.shape[0]):
         for i2 in xrange(i1+1, qtc.shape[0]):
-            trans[i1+1, i2+1] = np.absolute(qtc[i1]-qtc[i2]).max() != 2
+            trans[i1+1, i2+1] = np.nanmax(np.absolute(qtc[i1]-qtc[i2])) != 2
             if trans[i1+1, i2+1] == 1:
                 for j1 in xrange(qtc.shape[1]-1):
-                    for j2 in xrange(j1+2, qtc.shape[1]+1):
-                        if sum(np.absolute(qtc[i1, j1:j2])) == 1 \
-                                and sum(np.absolute(qtc[i2, j1:j2])) == 1:
-                            if max(np.absolute(qtc[i1, j1:j2]-qtc[i2, j1:j2])) > 0 \
-                                    and sum(qtc[i1, j1:j2]-qtc[i2, j1:j2]) != 1:
+                    for j2 in xrange(j1+1, qtc.shape[1]):
+                        if sum(np.absolute(qtc[i1, [j1, j2]])) == 1 \
+                                and sum(np.absolute(qtc[i2, [j1, j2]])) == 1:
+                            if np.nanmax(np.absolute(qtc[i1, [j1, j2]]-qtc[i2, [j1, j2]])) > 0 \
+                                    and sum(qtc[i1, [j1, j2]]-qtc[i2, [j1,j2]]) != 1:
                                 trans[i1+1, i2+1] = 5
                                 break
-                if trans[i1+1, i2+1] != 1:
-                    break
+                    if trans[i1+1, i2+1] != 1:
+                        break
             trans[i2+1, i1+1] = trans[i1+1, i2+1]
 
     trans[trans != 1] = 0
-    np.savetxt('/home/cdondrup/trans.csv', trans, delimiter=',', fmt='%1f')
+    #np.savetxt('/home/cdondrup/trans.csv', np.rint(trans).astype(int), delimiter=',', fmt='%i')
+    trans[trans == 0] = 0.00001
     trans[0] = 1
     trans[:, 0] = 0
     trans[:, -1] = 1
@@ -92,8 +94,6 @@ def createCNDTransEmiProb(qtc_type='qtcc'):
     trans[-1] = 0
     trans += np.dot(np.eye(state_num), 0.00001)
     trans[0, 0] = 0
-
-    #trans[trans == 0] = 0.00001
 
     trans = trans / trans.sum(axis=1).reshape(-1, 1)
     #np.savetxt('/home/cdondrup/trans.csv', trans, delimiter=',')

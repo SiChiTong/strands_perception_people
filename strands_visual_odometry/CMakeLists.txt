@@ -6,6 +6,7 @@ project(strands_visual_odometry)
 ## is used, also find other catkin packages
 find_package(PkgConfig REQUIRED)
 find_package(catkin REQUIRED COMPONENTS 
+    libfovis
     roscpp 
     sensor_msgs 
     std_msgs 
@@ -74,11 +75,7 @@ catkin_package(
 include_directories(
   ${catkin_INCLUDE_DIRS}
   ${EIGEN_INCLUDE_DIRS}
-  ${CMAKE_CURRENT_SOURCE_DIR}/3rd_party/fovis/libfovis
 )
-
-FILE(GLOB FOVIS_CPP ${CMAKE_CURRENT_SOURCE_DIR}/3rd_party/fovis/libfovis/*.cpp)
-FILE(GLOB FOVIS_C ${CMAKE_CURRENT_SOURCE_DIR}/3rd_party/fovis/libfovis/*.c)
 
 ## Declare a cpp library
 # add_library(visual_odometry
@@ -86,7 +83,7 @@ FILE(GLOB FOVIS_C ${CMAKE_CURRENT_SOURCE_DIR}/3rd_party/fovis/libfovis/*.c)
 # )
 
 ## Declare a cpp executable
-add_executable(visual_odometry src/main.cpp ${FOVIS_CPP} ${FOVIS_C})
+add_executable(visual_odometry src/main.cpp)
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes

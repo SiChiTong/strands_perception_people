@@ -16,7 +16,7 @@
 
 #include <boost/thread.hpp>
 
-#include "fovis.hpp"
+#include <fovis/fovis.hpp>
 
 #include "strands_visual_odometry/VisualOdometry.h"
 

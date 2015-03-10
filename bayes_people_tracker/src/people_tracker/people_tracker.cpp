@@ -48,6 +48,15 @@ PeopleTracker::PeopleTracker() :
 }
 
 void PeopleTracker::parseParams(ros::NodeHandle n) {
+    std::string filter;
+    n.getParam("filter_type", filter);
+    ROS_INFO_STREAM(filter);
+
+    XmlRpc::XmlRpcValue cv_noise;
+    n.getParam("cv_noise_params", cv_noise);
+    ROS_ASSERT(cv_noise.getType() == XmlRpc::XmlRpcValue::TypeStruct);
+    ROS_INFO_STREAM("Constant Velocity model noise: " << cv_noise);
+
     XmlRpc::XmlRpcValue detectors;
     n.getParam("detectors", detectors);
     ROS_ASSERT(detectors.getType() == XmlRpc::XmlRpcValue::TypeStruct);
@@ -56,8 +65,8 @@ void PeopleTracker::parseParams(ros::NodeHandle n) {
         try {
             st->addDetectorModel(it->first,
                     detectors[it->first]["matching_algorithm"] == "NN" ? NN : detectors[it->first]["matching_algorithm"] == "NNJPDA" ? NNJPDA : throw(asso_exception()),
-                    detectors[it->first]["noise_model"]["velocity"]["x"],
-                    detectors[it->first]["noise_model"]["velocity"]["y"],
+                    cv_noise["x"],
+                    cv_noise["y"],
                     detectors[it->first]["noise_model"]["position"]["x"],
                     detectors[it->first]["noise_model"]["position"]["y"]);
         } catch (std::exception& e) {

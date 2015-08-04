@@ -171,6 +171,9 @@ void PeopleTracker::publishDetections(
     result.header.frame_id = target_frame;
     result.header.seq = ++detect_seq;
     result.poses = ppl;
+    for(int i = 0; i < ppl.size(); i++) {
+        result.velocities.push_back(vels[i].position);
+    }
     result.uuids = uuids;
     result.distances = distances;
     result.angles = angles;

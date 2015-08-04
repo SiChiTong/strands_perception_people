@@ -8,7 +8,7 @@ Created on Tue Jul 28 17:52:31 2015
 
 import rospy
 from bayes_people_tracker.msg import PeopleTracker
-from geometry_msgs.msg import PoseStamped, PoseArray
+from geometry_msgs.msg import PoseStamped, PoseArray, Point
 import tf
 from visualization_msgs.msg import MarkerArray
 import people_tracker_emulator.msg_creator as mc
@@ -22,7 +22,7 @@ class PeopleTrackerEmulator(object):
 
     def __init__(self, name):
         rospy.loginfo("Starting %s ..." % name)
-        rospy.Subscriber(rospy.get_param("~pose_in_topic","/human/transformed"), PoseStamped, self.callback)
+        rospy.Subscriber(rospy.get_param("~pose_in_topic","/human/transformed"), PoseStamped, self.callback, queue_size=1)
         self.pospub = rospy.Publisher(rospy.get_param("~positions","/people_tracker/positions"), PeopleTracker, queue_size=10)
         self.markpub = rospy.Publisher(rospy.get_param("~marker","/people_tracker/marker_array"), MarkerArray, queue_size=10)
         self.pplpub = rospy.Publisher(rospy.get_param("~people","/people_tracker/people"), People, queue_size=10)
@@ -41,19 +41,21 @@ class PeopleTrackerEmulator(object):
             rospy.logwarn(e)
             return
 
-        self.posepub.publish(new_pose)
-        pa = PoseArray()
-        pa.header = new_pose.header
-        pa.poses.append(new_pose.pose)
-        self.poseapub.publish(pa)
-        p = mc.people_tracker_msg_from_posestamped(self._uuid, new_pose, self.tf)
-        self.pospub.publish(p)
-        marker_array = mc.marker_array_from_people_tracker_msg(p, self.target_frame)
-        self.markpub.publish(marker_array)
+        # Get velocity if previous pose and timestamp are available,
+        # 0 otherwise
+        vel = Point()
         if self._prev_pose and self._prev_time:
             dt = msg.header.stamp.to_sec() - self._prev_time
-            ppl = mc.people_msg_from_pose_stamped(self._uuid, new_pose, self._prev_pose, dt)
-            self.pplpub.publish(ppl)
+            vel = mc.get_velocity(new_pose, self._prev_pose, dt)
+
+        # Publish all the topics
+        self.posepub.publish(new_pose)
+        self.poseapub.publish(PoseArray(header=new_pose.header, poses=[new_pose.pose]))
+        self.pospub.publish(mc.people_tracker_msg_from_posestamped(self._uuid, new_pose, vel, self.tf))
+        self.markpub.publish(mc.marker_array_from_people_tracker_msg([new_pose.pose], self.target_frame))
+        self.pplpub.publish(mc.people_msg_from_pose_stamped(self._uuid, new_pose, vel))
+
+        # Update prev pose and time
         self._prev_time = msg.header.stamp.to_sec()
         self._prev_pose = new_pose
 

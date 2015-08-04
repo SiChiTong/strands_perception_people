@@ -6,7 +6,6 @@ from visualization_msgs.msg import MarkerArray
 import math
 import human_marker as hm
 from people_msgs.msg import People, Person
-from geometry_msgs.msg import Point
 
 
 def people_tracker_msg_from_posestamped(uuid, pose, vel, tf):
@@ -50,8 +49,8 @@ def people_msg_from_pose_stamped(uuid, pose, vel):
     ppl.people.append(p)
     return ppl
 
-def get_velocity(pose, prev_pose, dt):
-    p = Point()
-    p.x = (pose.pose.position.x-prev_pose.pose.position.x)/dt
-    p.y = (pose.pose.position.y-prev_pose.pose.position.y)/dt
-    return p
+def get_velocity(current, pose, prev_pose, dt, A=.05):
+    if dt > 0.0:
+        current.x += (((pose.pose.position.x-prev_pose.pose.position.x)/dt)-current.x)*A
+        current.y += (((pose.pose.position.y-prev_pose.pose.position.y)/dt)-current.y)*A
+    return current

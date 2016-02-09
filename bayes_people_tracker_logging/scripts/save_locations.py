@@ -19,9 +19,11 @@ class SaveLocations():
         self.current_edge = "none"
         self.closest_node = "none"
         self.tfl = tf.TransformListener()
-        self.dataset_name = "tracks"
+        self.dataset_name = rospy.get_param("~dataset_name", "tracks")
         self.target_frame = "/map"
-        self.msg_store = MessageStoreProxy(collection="people_perception")
+        self.msg_store = MessageStoreProxy(
+            collection=rospy.get_param("~collection", "people_perception")
+        )
 
         manager_topic = rospy.get_param("~manager_topic", "")
 

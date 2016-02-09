@@ -33,6 +33,8 @@
     <arg name="scan" default="/scan" />
     <arg name="with_mdl_tracker" default="false"/>
     <arg name="log" default="false" />
+    <arg name="logging_collection" default="people_perception"/>
+    <arg name="logging_dataset_name" default="tracks"/>
     <arg name="manager_topic" default="" />
     <arg name="with_laser_filter" default="true"/>
     <arg name="with_tracker_filter_map" default="false" />
@@ -46,7 +48,7 @@
     <arg name="user" default="" />
 
     <machine name="$(arg machine)" address="$(arg machine)" env-loader="$(optenv ROS_ENV_LOADER )" user="$(arg user)" default="true"/>
-    
+
     <!-- Ground Plane - fixed -->
     <include file="$(find ground_plane_estimation)/launch/ground_plane_fixed.launch">
         <arg name="machine" value="$(arg machine)"/>
@@ -120,7 +122,7 @@
         <arg name="machine" value="$(arg machine)"/>
         <arg name="user" value="$(arg user)"/>
     </include>
-    
+
     <!-- Leg Detector -->
     <group if="$(arg with_laser_filter)">
         <node pkg="laser_filters" type="scan_to_scan_filter_chain" respawn="true" name="laser_filter">
@@ -172,8 +174,8 @@
             <arg name="filtered_marker" value="$(arg tracker_filter_marker)"/>
         </include>
     </group>
-    
-    
+
+
     <!-- Logging -->
     <include file="$(find bayes_people_tracker_logging)/launch/logging.launch">
         <arg name="machine" value="$(arg machine)"/>
@@ -181,6 +183,8 @@
         <arg name="log" value="$(arg log)"/>
         <arg name="manager_topic" value="$(arg manager_topic)"/>
         <arg name="positions" value="$(arg tracker_filter_positions)"/>
+        <arg name="collection" value="$(arg logging_collection)"/>
+        <arg name="dataset_name" value="$(arg logging_dataset_name)"/>
     </include>
 
-</launch> 
+</launch>

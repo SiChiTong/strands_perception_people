@@ -54,10 +54,12 @@ class ToPoseArray():
         # Find x and y values for the given position key
         self.find_key(msg, args["point_name"], positions)
         for elem in positions:
+            if isinstance(elem, dict):
+                elem = elem[args["point_name"]]
             pose = geometry_msgs.msg.Pose()
             pose.position.x = elem['x']
             pose.position.y = elem['y']
-            pose.position.z = 0.0     # Project to ground plane
+            pose.position.z = elem['z']
             pose.orientation.w = 1.0  # Currently no orientation
             pose_array.poses.append(pose)
         args["publisher"].publish(pose_array)
